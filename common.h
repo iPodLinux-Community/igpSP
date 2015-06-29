@@ -32,6 +32,7 @@
   #include <stdlib.h>
   #include <stdio.h>
   #include <string.h>
+  #include <strings.h>
   #include <math.h>
   #include <fcntl.h>
   #include <unistd.h>
@@ -102,7 +103,9 @@
   #include <time.h>
   #include <stdio.h>
 #else
+#ifndef IPOD_BUILD
   #include "SDL.h"
+#endif
 
 #ifdef ARM_ARCH
   #define function_cc
@@ -237,7 +240,9 @@ typedef u32 fixed16_16;
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#ifndef IPOD_BUILD
 #include "SDL.h"
+#endif
 #include "cpu.h"
 #include "memory.h"
 #include "video.h"

@@ -19,7 +19,15 @@
 
 #include "common.h"
 
+#ifdef PSP_BUILD
+extern u32 file_length(u8 *filename, s32 dummy)
+#else
+extern u32 file_length(u8 *dummy, FILE *fp);
+#endif
+
+#ifndef IPOD_BUILD
 u32 load_file_zip(u8 *filename);
+#endif
 
 // This table is configured for sequential access on system defaults
 
@@ -489,6 +497,8 @@ u32 function_cc read_eeprom()
       break;                                                                  \
   }                                                                           \
 
+#ifndef NOSOUND
+
 #define trigger_dma(dma_number)                                               \
   if(value & 0x8000)                                                          \
   {                                                                           \
@@ -558,6 +568,73 @@ u32 function_cc read_eeprom()
     address16(io_registers, (dma_number * 12) + 0xBA) = value;                \
   }                                                                           \
 
+#else
+
+#define trigger_dma(dma_number)                                               \
+  if(value & 0x8000)                                                          \
+  {                                                                           \
+    if(dma[dma_number].start_type == DMA_INACTIVE)                            \
+    {                                                                         \
+      u32 start_type = (value >> 12) & 0x03;                                  \
+      u32 dest_address = address32(io_registers, (dma_number * 12) + 0xB4) &  \
+       0xFFFFFFF;                                                             \
+                                                                              \
+      dma[dma_number].dma_channel = dma_number;                               \
+      dma[dma_number].source_address =                                        \
+       address32(io_registers, (dma_number * 12) + 0xB0) & 0xFFFFFFF;         \
+      dma[dma_number].dest_address = dest_address;                            \
+      dma[dma_number].source_direction = (value >>  7) & 0x03;                \
+      dma[dma_number].repeat_type = (value >> 9) & 0x01;                      \
+      dma[dma_number].start_type = start_type;                                \
+      dma[dma_number].irq = (value >> 14) & 0x01;                             \
+                                                                              \
+      /* If it is sound FIFO DMA make sure the settings are a certain way */  \
+      if((dma_number >= 1) && (dma_number <= 2) &&                            \
+       (start_type == DMA_START_SPECIAL))                                     \
+      {                                                                       \
+        dma[dma_number].length_type = DMA_32BIT;                              \
+        dma[dma_number].length = 4;                                           \
+        dma[dma_number].dest_direction = DMA_FIXED;                           \
+      }                                                                       \
+      else                                                                    \
+      {                                                                       \
+        u32 length =                                                          \
+         address16(io_registers, (dma_number * 12) + 0xB8);                   \
+                                                                              \
+        if((dma_number == 3) && ((dest_address >> 24) == 0x0D) &&             \
+         ((length & 0x1F) == 17))                                             \
+        {                                                                     \
+          eeprom_size = EEPROM_8_KBYTE;                                       \
+        }                                                                     \
+                                                                              \
+        if(dma_number < 3)                                                    \
+          length &= 0x3FFF;                                                   \
+                                                                              \
+        if(length == 0)                                                       \
+        {                                                                     \
+          if(dma_number == 3)                                                 \
+            length = 0x10000;                                                 \
+          else                                                                \
+            length = 0x04000;                                                 \
+        }                                                                     \
+                                                                              \
+        dma[dma_number].length = length;                                      \
+        dma[dma_number].length_type = (value >> 10) & 0x01;                   \
+        dma[dma_number].dest_direction = (value >> 5) & 0x03;                 \
+      }                                                                       \
+                                                                              \
+      address16(io_registers, (dma_number * 12) + 0xBA) = value;              \
+      if(start_type == DMA_START_IMMEDIATELY)                                 \
+        return dma_transfer(dma + dma_number);                                \
+    }                                                                         \
+  }                                                                           \
+  else                                                                        \
+  {                                                                           \
+    dma[dma_number].start_type = DMA_INACTIVE;                                \
+    address16(io_registers, (dma_number * 12) + 0xBA) = value;                \
+  }                                                                           \
+
+#endif
 
 #define access_register8_high(address)                                        \
   value = (value << 8) | (address8(io_registers, address))                    \
@@ -713,6 +790,7 @@ cpu_alert_type function_cc write_io_register8(u32 address, u32 value)
       address32(io_registers, 0x3C) = value;
       break;
 
+#ifndef NOSOUND
     // Sound 1 control sweep
     case 0x60:
       access_register8_low(0x60);
@@ -865,6 +943,7 @@ cpu_alert_type function_cc write_io_register8(u32 address, u32 value)
     case 0xA4:
       sound_timer_queue8(1, value);
       break;
+#endif
 
     // DMA control (trigger byte)
     case 0xBB:
@@ -1053,6 +1132,7 @@ cpu_alert_type function_cc write_io_register16(u32 address, u32 value)
       address32(io_registers, 0x3C) = value;
       break;
 
+#ifndef NOSOUND
     // Sound 1 control sweep
     case 0x60:
       gbc_sound_tone_control_sweep();
@@ -1133,6 +1213,7 @@ cpu_alert_type function_cc write_io_register16(u32 address, u32 value)
     case 0xA4:
       sound_timer_queue16(1, value);
       break;
+#endif
 
     // DMA control
     case 0xBA:
@@ -1244,6 +1325,7 @@ cpu_alert_type function_cc write_io_register32(u32 address, u32 value)
       address32(io_registers, 0x3C) = value;
       break;
 
+#ifndef NOSOUND
     // Sound FIFO A
     case 0xA0:
       sound_timer_queue32(0, value);
@@ -1253,6 +1335,7 @@ cpu_alert_type function_cc write_io_register32(u32 address, u32 value)
     case 0xA4:
       sound_timer_queue32(1, value);
       break;
+#endif
 
     default:
     {
@@ -2158,10 +2241,14 @@ u32 load_gamepak(char *name)
   s32 file_size;
   u8 cheats_filename[256];
 
+#ifdef IPOD_BUILD
+  file_size = load_gamepak_raw(name);
+#else
   if(!strcmp(dot_position, ".zip"))
     file_size = load_file_zip(name);
   else
     file_size = load_gamepak_raw(name);
+#endif
 
   // A dumb April fool's joke was here once :o
 
@@ -3118,6 +3205,7 @@ void bios_region_read_protect()
 #endif
 }
 
+#ifndef NOSOUND
 
 #define savestate_block(type)                                                 \
   cpu_##type##_savestate(savestate_file);                                     \
@@ -3126,6 +3214,17 @@ void bios_region_read_protect()
   memory_##type##_savestate(savestate_file);                                  \
   sound_##type##_savestate(savestate_file);                                   \
   video_##type##_savestate(savestate_file)                                    \
+
+#else
+
+#define savestate_block(type)                                                 \
+  cpu_##type##_savestate(savestate_file);                                     \
+  input_##type##_savestate(savestate_file);                                   \
+  main_##type##_savestate(savestate_file);                                    \
+  memory_##type##_savestate(savestate_file);                                  \
+  video_##type##_savestate(savestate_file)                                    \
+
+#endif
 
 void load_state(char *savestate_filename)
 {
@@ -3182,11 +3281,13 @@ void load_state(char *savestate_filename)
        convert_palette(current_color);
     }
 
+#ifndef NOSOUND
     // Oops, these contain raw pointers
     for(i = 0; i < 4; i++)
     {
       gbc_sound_channel[i].sample_data = square_pattern_duty[2];
     }
+#endif
     current_debug_state = STEP;
     instruction_count = 0;
 

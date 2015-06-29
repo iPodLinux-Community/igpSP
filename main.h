@@ -131,6 +131,8 @@ u32 file_length(u8 *dummy, FILE *fp);
 
 #endif
 
+#ifndef NOSOUND
+
 #define count_timer(timer_number)                                             \
   timer[timer_number].reload = 0x10000 - value;                               \
   if(timer_number < 2)                                                        \
@@ -194,6 +196,49 @@ u32 file_length(u8 *dummy, FILE *fp);
     }                                                                         \
   }                                                                           \
   address16(io_registers, 0x102 + (timer_number * 4)) = value;                \
+
+#else
+
+#define count_timer(timer_number)                                             \
+  timer[timer_number].reload = 0x10000 - value;                               \
+
+#define trigger_timer(timer_number)                                           \
+  if(value & 0x80)                                                            \
+  {                                                                           \
+    if(timer[timer_number].status == TIMER_INACTIVE)                          \
+    {                                                                         \
+      u32 prescale = prescale_table[value & 0x03];                            \
+      u32 timer_reload = timer[timer_number].reload;                          \
+                                                                              \
+      if((value >> 2) & 0x01)                                                 \
+        timer[timer_number].status = TIMER_CASCADE;                           \
+      else                                                                    \
+        timer[timer_number].status = TIMER_PRESCALE;                          \
+                                                                              \
+      timer[timer_number].prescale = prescale;                                \
+      timer[timer_number].irq = (value >> 6) & 0x01;                          \
+                                                                              \
+      address16(io_registers, 0x100 + (timer_number * 4)) =                   \
+       -timer_reload;                                                         \
+                                                                              \
+      timer_reload <<= prescale;                                              \
+      timer[timer_number].count = timer_reload;                               \
+                                                                              \
+      if(timer_reload < execute_cycles)                                       \
+        execute_cycles = timer_reload;                                        \
+    }                                                                         \
+  }                                                                           \
+  else                                                                        \
+  {                                                                           \
+    if(timer[timer_number].status != TIMER_INACTIVE)                          \
+    {                                                                         \
+      timer[timer_number].status = TIMER_INACTIVE;                            \
+      timer[timer_number].stop_cpu_ticks = cpu_ticks;                         \
+    }                                                                         \
+  }                                                                           \
+  address16(io_registers, 0x102 + (timer_number * 4)) = value;                \
+
+#endif
 
 void change_ext(u8 *src, u8 *buffer, u8 *extension);
 

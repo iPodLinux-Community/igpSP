@@ -91,6 +91,25 @@ static void Ge_Finish_Callback(int id, void *arg)
 #include "SDL_gp2x.h"
 SDL_Surface *hw_screen;
 #endif
+
+#ifdef IPOD_BUILD
+
+#include "ipod/ipod_common.h"
+
+extern uint32 IPOD_WIDTH, IPOD_HEIGHT;
+
+u16 *screen;
+uint32 WIDTH, HEIGHT;
+const u32 video_scale = 0;
+
+#define get_screen_pixels()                                                   \
+  ((u16 *)screen)                                                             \
+
+#define get_screen_pitch()                                                    \
+  (240)                                                                       \
+
+#else
+
 SDL_Surface *screen;
 const u32 video_scale = 1;
 
@@ -99,6 +118,8 @@ const u32 video_scale = 1;
 
 #define get_screen_pitch()                                                    \
   (screen->pitch / 2)                                                         \
+
+#endif
 
 #endif
 
@@ -657,7 +678,7 @@ void render_scanline_conditional_bitmap(u32 start, u32 end, u16 *scanline,
 #define get_tile_4bpp()                                                       \
   current_tile = *map_ptr;                                                    \
   current_palette = (current_tile >> 12) << 4;                                \
-  tile_ptr = tile_base + ((current_tile & 0x3FF) * 32);                       \
+  tile_ptr = tile_base + ((current_tile & 0x3FF) << 5);                       \
 
 
 // Helper macro for drawing clipped 4bpp tiles.
@@ -860,7 +881,7 @@ void render_scanline_conditional_bitmap(u32 start, u32 end, u16 *scanline,
   u32 pixel_run = 256 - (horizontal_offset % 256);                            \
   u32 current_tile;                                                           \
                                                                               \
-  map_base += ((vertical_offset % 256) / 8) * 32;                             \
+  map_base += ((vertical_offset % 256) / 8) << 5;                             \
   partial_tile_offset = (horizontal_offset % 8);                              \
                                                                               \
   if(pixel_run >= end)                                                        \
@@ -1022,12 +1043,12 @@ void render_scanline_text_##combine_op##_##alpha_op(u32 layer,                \
                                                                               \
   if((map_size & 0x02) && (vertical_offset >= 256))                           \
   {                                                                           \
-    map_base += ((map_width / 8) * 32) +                                      \
-     (((vertical_offset - 256) / 8) * 32);                                    \
+    map_base += ((map_width / 8) << 5) +                                      \
+     (((vertical_offset - 256) / 8) << 5);                                    \
   }                                                                           \
   else                                                                        \
   {                                                                           \
-    map_base += (((vertical_offset % 256) / 8) * 32);                         \
+    map_base += (((vertical_offset % 256) / 8) << 5);                         \
   }                                                                           \
                                                                               \
   if(map_size & 0x01)                                                         \
@@ -1568,7 +1589,7 @@ bitmap_layer_render_struct bitmap_mode_renderers[3] =
 // Get the current row offset into an obj in 1D map space
 
 #define obj_tile_offset_1D(color_depth, flip_op)                              \
-  tile_ptr = tile_base + ((obj_attribute_2 & 0x3FF) * 32)                     \
+  tile_ptr = tile_base + ((obj_attribute_2 & 0x3FF) << 5)                     \
    + ((vertical_offset / 8) * (obj_width / 8) * tile_size_##color_depth)      \
    + ((vertical_offset % 8) * tile_width_##color_depth)                       \
    obj_tile_offset_##flip_op(color_depth)                                     \
@@ -1576,7 +1597,7 @@ bitmap_layer_render_struct bitmap_mode_renderers[3] =
 // Get the current row offset into an obj in 2D map space
 
 #define obj_tile_offset_2D(color_depth, flip_op)                              \
-  tile_ptr = tile_base + ((obj_attribute_2 & 0x3FF) * 32)                     \
+  tile_ptr = tile_base + ((obj_attribute_2 & 0x3FF) << 5)                     \
    + ((vertical_offset / 8) * 1024)                                           \
    + ((vertical_offset % 8) * tile_width_##color_depth)                       \
    obj_tile_offset_##flip_op(color_depth)                                     \
@@ -1681,14 +1702,14 @@ bitmap_layer_render_struct bitmap_mode_renderers[3] =
 }                                                                             \
 
 #define obj_scale_offset_1D(color_depth)                                      \
-  tile_ptr = tile_base + ((obj_attribute_2 & 0x3FF) * 32)                     \
+  tile_ptr = tile_base + ((obj_attribute_2 & 0x3FF) << 5)                     \
    + ((vertical_offset / 8) * (max_x / 8) * tile_size_##color_depth)          \
    + ((vertical_offset % 8) * tile_width_##color_depth)                       \
 
 // Get the current row offset into an obj in 2D map space
 
 #define obj_scale_offset_2D(color_depth)                                      \
-  tile_ptr = tile_base + ((obj_attribute_2 & 0x3FF) * 32)                     \
+  tile_ptr = tile_base + ((obj_attribute_2 & 0x3FF) << 5)                     \
    + ((vertical_offset / 8) * 1024)                                           \
    + ((vertical_offset % 8) * tile_width_##color_depth)                       \
 
@@ -1776,7 +1797,7 @@ bitmap_layer_render_struct bitmap_mode_renderers[3] =
 
 #define obj_render_rotate(combine_op, color_depth, alpha_op, map_space)       \
 {                                                                             \
-  tile_ptr = tile_base + ((obj_attribute_2 & 0x3FF) * 32);                    \
+  tile_ptr = tile_base + ((obj_attribute_2 & 0x3FF) << 5);                    \
   obj_rotate_offset_##map_space(color_depth);                                 \
                                                                               \
   source_x += (y_delta * dmx) - (middle_x * dx);                              \
@@ -1834,8 +1855,8 @@ bitmap_layer_render_struct bitmap_mode_renderers[3] =
   u32 obj_pitch = tile_width_##color_depth;                                   \
   u32 obj_tile_pitch;                                                         \
                                                                               \
-  middle_x = (obj_width / 2);                                                 \
-  middle_y = (obj_height / 2);                                                \
+  middle_x = (obj_width >> 1);                                                 \
+  middle_y = (obj_height >> 1);                                                \
                                                                               \
   source_x = (middle_x << 8);                                                 \
   source_y = (middle_y << 8);                                                 \
@@ -2386,7 +2407,7 @@ fill_line_builder(color32);
 
 #ifdef RENDER_COLOR16_NORMAL
 
-#ifndef GP2X_BUILD
+#if !defined(GP2X_BUILD) && !defined(IPOD_BUILD)
 
 void expand_normal(u16 *screen_ptr, u32 start, u32 end)
 {
@@ -2415,6 +2436,8 @@ void expand_normal(u16 *screen_ptr, u32 start, u32 end)
 #endif
 
 
+// expand_blend assembly doesn't work for iPod for some reason ; / ~Keripo
+//#if !defined(GP2X_BUILD) && !defined(IPOD_BUILD)
 #ifndef GP2X_BUILD
 
 void expand_blend(u32 *screen_src_ptr, u16 *screen_dest_ptr,
@@ -3356,6 +3379,12 @@ void flip_screen()
     current_scanline_ptr += pitch;                                            \
   }                                                                           \
 
+#ifdef IPOD_BUILD
+void flip_screen()
+{
+  ipod_cop_update_screen();
+}
+#else
 void flip_screen()
 {
   if((video_scale != 1) && (current_scale != unscaled))
@@ -3414,6 +3443,7 @@ void flip_screen()
   SDL_Flip(screen);
 #endif
 }
+#endif
 
 #endif
 
@@ -3516,6 +3546,13 @@ void init_video()
 
 void init_video()
 {
+#ifdef IPOD_BUILD
+  // Gameboy Advance dimensions
+  WIDTH = 240;
+  HEIGHT = 160;
+  screen = malloc(WIDTH * HEIGHT * 2);
+  ipod_init_video();
+#else
   SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_NOPARACHUTE);
 
 #ifdef GP2X_BUILD
@@ -3532,6 +3569,7 @@ void init_video()
   screen = SDL_SetVideoMode(240 * video_scale, 160 * video_scale, 16, 0);
 #endif
   SDL_ShowCursor(0);
+#endif
 }
 
 #endif
@@ -3657,6 +3695,9 @@ void video_resolution_large()
   SDL_ShowCursor(0);
 
   gp2x_load_mmuhack();
+#elif defined(IPOD_BUILD)
+  resolution_width = IPOD_WIDTH;
+  resolution_height = IPOD_HEIGHT;
 #else
   screen = SDL_SetVideoMode(480, 272, 16, 0);
   resolution_width = 480;
@@ -3666,6 +3707,11 @@ void video_resolution_large()
 
 void video_resolution_small()
 {
+#ifdef IPOD_BUILD
+  current_scale = unscaled;
+  resolution_width = IPOD_WIDTH;
+  resolution_height = IPOD_HEIGHT;
+#else
   current_scale = screen_scale;
 
 #ifdef GP2X_BUILD
@@ -3688,6 +3734,7 @@ void video_resolution_small()
 #endif
   resolution_width = small_resolution_width;
   resolution_height = small_resolution_height;
+#endif
 }
 
 void set_gba_resolution(video_scale_type scale)
@@ -3709,6 +3756,13 @@ void set_gba_resolution(video_scale_type scale)
 
 void clear_screen(u16 color)
 {
+#ifdef IPOD_BUILD
+  int i, max, p;
+  max = WIDTH * HEIGHT;
+  for (i = 0; i < max; i++) {
+    screen[i] = color;
+  }
+#else
   u16 *dest_ptr = get_screen_pixels();
   u32 line_skip = get_screen_pitch() - screen->w;
   u32 x, y;
@@ -3721,6 +3775,7 @@ void clear_screen(u16 color)
     }
     dest_ptr += line_skip;
   }
+#endif
 }
 
 #endif
@@ -3734,6 +3789,7 @@ u16 *copy_screen()
 
 void blit_to_screen(u16 *src, u32 w, u32 h, u32 dest_x, u32 dest_y)
 {
+#ifndef IPOD_BUILD
   u32 pitch = get_screen_pitch();
   u16 *dest_ptr = get_screen_pixels() + dest_x + (dest_y * pitch);
 
@@ -3749,6 +3805,7 @@ void blit_to_screen(u16 *src, u32 w, u32 h, u32 dest_x, u32 dest_y)
     }
     dest_ptr += line_skip;
   }
+#endif
 }
 
 void print_string_ext(const char *str, u16 fg_color, u16 bg_color,

@@ -1143,10 +1143,10 @@ const u32 psr_masks[16] =
   address32(address_region, (address + offset) & 0x7FFF) = dest               \
 
 #define arm_block_memory_offset_down_a()                                      \
-  (base - (word_bit_count(reg_list) * 4) + 4)                                 \
+  (base - (word_bit_count(reg_list) << 2) + 4)                                 \
 
 #define arm_block_memory_offset_down_b()                                      \
-  (base - (word_bit_count(reg_list) * 4))                                     \
+  (base - (word_bit_count(reg_list) << 2))                                     \
 
 #define arm_block_memory_offset_no()                                          \
   (base)                                                                      \
@@ -1155,10 +1155,10 @@ const u32 psr_masks[16] =
   (base + 4)                                                                  \
 
 #define arm_block_memory_writeback_down()                                     \
-  reg[rn] = base - (word_bit_count(reg_list) * 4)                             \
+  reg[rn] = base - (word_bit_count(reg_list) << 2)                             \
 
 #define arm_block_memory_writeback_up()                                       \
-  reg[rn] = base + (word_bit_count(reg_list) * 4)                             \
+  reg[rn] = base + (word_bit_count(reg_list) << 2)                             \
 
 #define arm_block_memory_writeback_no()                                       \
 
@@ -1456,13 +1456,13 @@ const u32 psr_masks[16] =
 #define thumb_block_address_preadjust_no_op()                                 \
 
 #define thumb_block_address_preadjust_up()                                    \
-  address += bit_count[reg_list] * 4                                          \
+  address += bit_count[reg_list] << 2                                          \
 
 #define thumb_block_address_preadjust_down()                                  \
-  address -= bit_count[reg_list] * 4                                          \
+  address -= bit_count[reg_list] << 2                                          \
 
 #define thumb_block_address_preadjust_push_lr()                               \
-  address -= (bit_count[reg_list] + 1) * 4                                    \
+  address -= (bit_count[reg_list] + 1) << 2                                    \
 
 #define thumb_block_address_postadjust_no_op()                                \
 
@@ -4142,8 +4142,10 @@ u32 function_cc step_debug(u32 pc, u32 cycles)
   {
     u32 key = 0;
 
+#ifndef IPOD_BUILD
     SDL_LockMutex(sound_mutex);
     SDL_PauseAudio(1);
+#endif
 
     if(output_field >= num_output_fields)
     {
@@ -4277,8 +4279,10 @@ u32 function_cc step_debug(u32 pc, u32 cycles)
         quit();
     }
 
+#ifndef IPOD_BUILD
     SDL_PauseAudio(0);
     SDL_UnlockMutex(sound_mutex);
+#endif
   }
 
   last_instruction = reg[REG_PC];

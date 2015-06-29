@@ -17,11 +17,15 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-
 #include "common.h"
+#ifdef IPOD_BUILD
+void sound_callback(int length);
+#else
 #include <SDL.h>
+#endif
 u32 global_enable_audio = 1;
 
+u32 sound_fd;
 direct_sound_struct direct_sound_channel[2];
 gbc_sound_struct gbc_sound_channel[4];
 
@@ -31,9 +35,11 @@ u32 sound_frequency = 44100;
 u32 sound_frequency = 44100;
 #endif
 
+#ifndef IPOD_BUILD
 SDL_AudioSpec sound_settings;
 SDL_mutex *sound_mutex;
 SDL_cond *sound_cv;
+#endif
 
 #ifndef PSP_BUILD
 u32 audio_buffer_size_number = 7;
@@ -433,11 +439,13 @@ u32 gbc_sound_master_volume;
 
 void synchronize_sound()
 {
+#ifndef IPOD_BUILD
   SDL_LockMutex(sound_mutex);
 
   gbc_sound_synchronize();
 
   SDL_UnlockMutex(sound_mutex);
+#endif
 }
 
 void update_gbc_sound(u32 cpu_ticks)
@@ -466,17 +474,21 @@ void update_gbc_sound(u32 cpu_ticks)
     gbc_sound_partial_ticks &= 0xFFFF;
   }
 
+#ifndef IPOD_BUILD
   SDL_LockMutex(sound_mutex);
+#endif
   if(synchronize_flag)
   {
     if(((gbc_sound_buffer_index - sound_buffer_base) % BUFFER_SIZE) >
      (audio_buffer_size * 3 / 2))
     {
+#ifndef IPOD_BUILD
       while(((gbc_sound_buffer_index - sound_buffer_base) % BUFFER_SIZE) >
        (audio_buffer_size * 3 / 2))
       {
         SDL_CondWait(sound_cv, sound_mutex);
       }
+#endif
 
 #ifdef PSP_BUILD
       if(current_frameskip_type == auto_frameskip)
@@ -579,17 +591,42 @@ void update_gbc_sound(u32 cpu_ticks)
 
   address16(io_registers, 0x84) = sound_status;
 
+#ifndef IPOD_BUILD
   SDL_CondSignal(sound_cv);
 
   SDL_UnlockMutex(sound_mutex);
+#endif
 
   gbc_sound_last_cpu_ticks = cpu_ticks;
+#ifndef IPOD_BUILD
   gbc_sound_buffer_index =
    (gbc_sound_buffer_index + (buffer_ticks * 2)) % BUFFER_SIZE;
+#else // Zaphod made these changes - I have no idea how this works ; / ~Keripo
+  gbc_sound_buffer_index =
+   (gbc_sound_buffer_index + (buffer_ticks << 1)) % BUFFER_SIZE;
+  if (((gbc_sound_buffer_index - sound_buffer_base) % BUFFER_SIZE) > (audio_buffer_size >> 2))
+    sound_callback(audio_buffer_size >> 2);
+#endif
 }
 
 #define sound_copy_normal()                                                   \
   current_sample = source[i]                                                  \
+
+// Zaphod made these changes - I have no idea how this works ; / ~Keripo
+#ifdef IPOD_BUILD                                                             \
+
+#define sound_copy(source_offset, length, render_type)                        \
+  _length = (length) / 2;                                                     \
+  source = (s16 *)(sound_buffer + source_offset);                             \
+  write(sound_fd, source,_length);					                          \
+  memset(source,0,_length);
+
+#define sound_copy_null(source_offset, length)                                \
+  _length = (length) / 2;                                                     \
+  source = (s16 *)(sound_buffer + source_offset);                             \
+  memset(source, 0, _length);
+  
+#else                                                                         \
 
 #define sound_copy(source_offset, length, render_type)                        \
   _length = (length) / 2;                                                     \
@@ -615,16 +652,25 @@ void update_gbc_sound(u32 cpu_ticks)
     source[i] = 0;                                                            \
   }                                                                           \
 
+#endif
+  
 
+#ifdef IPOD_BUILD
+void sound_callback(int length)
+#else
 void sound_callback(void *userdata, Uint8 *stream, int length)
+#endif
 {
   u32 sample_length = length / 2;
   u32 _length;
   u32 i;
+#ifndef IPOD_BUILD
   s16 *stream_base = (s16 *)stream;
+#endif
   s16 *source;
   s32 current_sample;
 
+#ifndef IPOD_BUILD
   SDL_LockMutex(sound_mutex);
 
   while(((gbc_sound_buffer_index - sound_buffer_base) % BUFFER_SIZE) <
@@ -632,6 +678,7 @@ void sound_callback(void *userdata, Uint8 *stream, int length)
   {
     SDL_CondWait(sound_cv, sound_mutex);
   }
+#endif
 
   if(global_enable_audio)
   {
@@ -666,9 +713,11 @@ void sound_callback(void *userdata, Uint8 *stream, int length)
     }
   }
 
+#ifndef IPOD_BUILD
   SDL_CondSignal(sound_cv);
 
   SDL_UnlockMutex(sound_mutex);
+#endif
 }
 
 // Special thanks to blarrg for the LSFR frequency used in Meridian, as posted
@@ -747,14 +796,20 @@ void sound_exit()
 {
   gbc_sound_buffer_index =
    (sound_buffer_base + audio_buffer_size) % BUFFER_SIZE;
+#ifdef IPOD_BUILD
+  ipod_exit_sound();
+#else
   SDL_PauseAudio(1);
   SDL_CondSignal(sound_cv);
+#endif
 }
 
 void init_sound()
 {
 #ifdef PSP_BUILD
   audio_buffer_size = (audio_buffer_size_number * 1024) + 3072;
+#elif defined(IPOD_BUILD)
+  audio_buffer_size = 16384;
 #elif defined(TAVI_BUILD) || defined(ARM_ARCH)
   audio_buffer_size = 16 << audio_buffer_size_number;
 //  audio_buffer_size = 16384;
@@ -762,6 +817,11 @@ void init_sound()
   audio_buffer_size = 16384;
 #endif
 
+#ifdef IPOD_BUILD
+  ipod_init_sound();
+#endif
+
+#ifndef IPOD_BUILD
   SDL_AudioSpec desired_spec =
   {
     sound_frequency,
@@ -774,6 +834,7 @@ void init_sound()
     sound_callback,
     NULL
   };
+#endif
 
   gbc_sound_tick_step =
    float_to_fp16_16(256.0 / sound_frequency);
@@ -783,11 +844,13 @@ void init_sound()
 
   reset_sound();
 
+#ifndef IPOD_BUILD
   SDL_OpenAudio(&desired_spec, &sound_settings);
   sound_frequency = sound_settings.freq;
   sound_mutex = SDL_CreateMutex();
   sound_cv = SDL_CreateCond();
   SDL_PauseAudio(0);
+#endif
 }
 
 #define sound_savestate_builder(type)                                       \
@@ -809,4 +872,3 @@ void sound_##type##_savestate(file_tag_type savestate_file)                 \
 
 sound_savestate_builder(read);
 sound_savestate_builder(write_mem);
-

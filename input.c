@@ -629,6 +629,55 @@ void init_input()
 #endif
 
 
+#ifdef IPOD_BUILD
+
+// Doesn't do anything but needed for config file
+u32 gamepad_config_map[16] =
+{
+  BUTTON_ID_MENU,
+  BUTTON_ID_A,
+  BUTTON_ID_B,
+  BUTTON_ID_START,
+  BUTTON_ID_L,
+  BUTTON_ID_R,
+  BUTTON_ID_DOWN,
+  BUTTON_ID_LEFT,
+  BUTTON_ID_UP,
+  BUTTON_ID_RIGHT,
+  BUTTON_ID_SELECT,
+  BUTTON_ID_START,
+  BUTTON_ID_UP,
+  BUTTON_ID_DOWN,
+  BUTTON_ID_LEFT,
+  BUTTON_ID_RIGHT
+};
+
+void enter_menu()
+{
+  u16 *screen_copy;
+  screen_copy = copy_screen();
+  menu(screen_copy);
+  free(screen_copy);
+}
+
+u32 update_input()
+{
+  u32 key;
+  key = ipod_update_ingame_input();
+  trigger_key(key);
+  io_registers[REG_P1] = (~key) & 0x3FF;
+  return 0;
+}
+
+void init_input() {};
+
+gui_action_type get_gui_input()
+{
+  return ipod_update_menu_input();
+}
+
+#endif
+
 
 #ifdef PC_BUILD
 

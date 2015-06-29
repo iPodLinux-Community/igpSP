@@ -50,6 +50,13 @@ u64 last_frame_interval_timestamp;
 u32 gp2x_fps_debug = 0;
 
 void gp2x_quit(void);
+
+#elif defined(IPOD_BUILD)
+
+u32 frameskip_value = 4;
+u64 frame_count_initial_timestamp = 0;
+u64 last_frame_interval_timestamp;
+
 #else
 
 u32 frameskip_value = 4;
@@ -97,6 +104,8 @@ void trigger_ext_event();
   if(timer[timer_number].status == TIMER_PRESCALE)                            \
     check_count(timer[timer_number].count);                                   \
 
+#ifndef NOSOUND
+
 #define update_timer(timer_number)                                            \
   if(timer[timer_number].status != TIMER_INACTIVE)                            \
   {                                                                           \
@@ -134,7 +143,43 @@ void trigger_ext_event();
     }                                                                         \
   }                                                                           \
 
+#else
+
+#define update_timer(timer_number)                                            \
+  if(timer[timer_number].status != TIMER_INACTIVE)                            \
+  {                                                                           \
+    if(timer[timer_number].status != TIMER_CASCADE)                           \
+    {                                                                         \
+      timer[timer_number].count -= execute_cycles;                            \
+      io_registers[REG_TM##timer_number##D] =                                 \
+       -(timer[timer_number].count >> timer[timer_number].prescale);          \
+    }                                                                         \
+                                                                              \
+    if(timer[timer_number].count <= 0)                                        \
+    {                                                                         \
+      if(timer[timer_number].irq == TIMER_TRIGGER_IRQ)                        \
+        irq_raised |= IRQ_TIMER##timer_number;                                \
+                                                                              \
+      if((timer_number != 3) &&                                               \
+       (timer[timer_number + 1].status == TIMER_CASCADE))                     \
+      {                                                                       \
+        timer[timer_number + 1].count--;                                      \
+        io_registers[REG_TM0D + (timer_number + 1) * 2] =                     \
+         -(timer[timer_number + 1].count);                                    \
+      }                                                                       \
+                                                                              \
+      timer[timer_number].count +=                                            \
+       (timer[timer_number].reload << timer[timer_number].prescale);          \
+    }                                                                         \
+  }                                                                           \
+
+#endif
+
+#ifdef IPOD_BUILD
+u8 *file_ext[] = { ".gba", ".bin", NULL };
+#else
 u8 *file_ext[] = { ".gba", ".bin", ".zip", NULL };
+#endif
 
 #ifdef ARM_ARCH
 void ChangeWorkingDirectory(char *exe)
@@ -159,7 +204,9 @@ void init_main()
   for(i = 0; i < 4; i++)
   {
     dma[i].start_type = DMA_INACTIVE;
+#ifndef NOSOUND
     dma[i].direct_sound_channel = DMA_NO_DIRECT_SOUND;
+#endif
     timer[i].status = TIMER_INACTIVE;
     timer[i].reload = 0x10000;
     timer[i].stop_cpu_ticks = 0;
@@ -221,7 +268,20 @@ int main(int argc, char *argv[])
   delay_us(2500000);
 #endif
 
+#ifdef IPOD_BUILD
+  ipod_init_conf();
+  ipod_init_hw();
+  ipod_init_input();
+  ipod_init_cop();
+  // ipod_init_sound() is called by init_sound()
+  // ipod_init_video() is called by init_video()
+#endif
+
   init_video();
+
+#ifdef IPOD_BUILD
+  ipod_update_settings();
+#endif
 
 #ifdef GP2X_BUILD
   // Overclocking GP2X and MMU patch goes here
@@ -288,7 +348,9 @@ int main(int argc, char *argv[])
   }
 
   init_main();
+#ifndef NOSOUND
   init_sound();
+#endif
 
   init_input();
 
@@ -342,7 +404,7 @@ int main(int argc, char *argv[])
   execute_arm_translate(execute_cycles);
 #else
 
-#ifdef GP2X_BUILD
+#if defined(GP2X_BUILD) || defined(IPOD_BUILD)
   get_ticks_us(&frame_count_initial_timestamp);
 #endif
 
@@ -351,7 +413,9 @@ int main(int argc, char *argv[])
    current_savestate_filename);
   load_state(current_savestate_filename); */
 
+#ifndef IPOD_BUILD
   debug_on();
+#endif
 
   if(argc > 2)
   {
@@ -404,7 +468,9 @@ void trigger_ext_event()
   u64 new_ticks;
   u8 current_savestate_filename[512];
 
+#ifndef BENCHMARK
   return;
+#else
 
   if(event_number)
   {
@@ -475,14 +541,14 @@ void trigger_ext_event()
        benchmark_ticks[6];
       benchmark_ticks[7] = benchmark_ticks[0] - benchmark_ticks[1];
 
-      printf("Benchmark results (%d frames): \n", event_cycles_trigger);
+      fprintf(stderr, "Benchmark results (%d frames): \n", event_cycles_trigger);
       for(i = 0; i < 8; i++)
       {
-        printf("   %s: %d ms (%f ms per frame)\n",
+        fprintf(stderr, "   %s: %d ms (%f ms per frame)\n",
          print_strings[i], (u32)benchmark_ticks[i] / 1000,
          (float)(benchmark_ticks[i] / (1000.0 * event_cycles_trigger)));
         if(i == 4)
-          printf("\n");
+          fprintf(stderr, "\n");
       }
       quit();
     }
@@ -492,6 +558,7 @@ void trigger_ext_event()
 
   get_ticks_us(benchmark_ticks + event_number);
   event_number++;
+#endif
 }
 
 u32 update_gba()
@@ -504,12 +571,14 @@ u32 update_gba()
 
     reg[CHANGED_PC_STATUS] = 0;
 
+#ifndef NOSOUND
     if(gbc_sound_update)
     {
       gbc_update_count++;
       update_gbc_sound(cpu_ticks);
       gbc_sound_update = 0;
     }
+#endif
 
     update_timer(0);
     update_timer(1);
@@ -607,7 +676,9 @@ u32 update_gba()
           if(update_input())
             continue;
 
+#ifndef NOSOUND
           update_gbc_sound(cpu_ticks);
+#endif
           synchronize();
 
           update_screen();
@@ -750,7 +821,7 @@ void synchronize()
 
 #endif
 
-#ifdef GP2X_BUILD
+#if defined(GP2X_BUILD) || defined(IPOD_BUILD)
 
 u32 real_frame_count = 0;
 u32 virtual_frame_count = 0;
@@ -769,12 +840,14 @@ void synchronize()
   static u32 fps = 60;
   static u32 frames_drawn = 60;
 
+#ifdef GP2X_BUILD
   if(gp2x_fps_debug)
   {
     char print_buffer[128];
     sprintf(print_buffer, "%d (%d)", fps, frames_drawn);
     print_string(print_buffer, 0xFFFF, 0x000, 0, 0);
   }
+#endif
 
   get_ticks_us(&new_ticks);
   time_delta = new_ticks - last_screen_timestamp;
@@ -819,7 +892,7 @@ void synchronize()
     u32 new_frames_drawn;
 
     time_delta = new_ticks - last_frame_interval_timestamp;
-    new_fps = (u64)((u64)1000000 * (u64)frame_interval) / time_delta;
+    new_fps = 1000000 * frame_interval / time_delta;
     new_frames_drawn =
      (frame_interval - interval_skipped_frames) * (60 / frame_interval);
 
@@ -851,8 +924,10 @@ void synchronize()
 
   interval_skipped_frames += skip_next_frame;
 
+#if !defined(IPOD_BUILD) || defined(BENCHMARK)
   if(!synchronize_flag)
     print_string("--FF--", 0xFFFF, 0x000, 0, 0);
+#endif
 }
 
 #endif
@@ -930,7 +1005,9 @@ void quit()
   if(!update_backup_flag)
     update_backup_force();
 
+#ifndef NOSOUND
   sound_exit();
+#endif
 
 #ifdef REGISTER_USAGE_ANALYZE
   print_register_usage();
@@ -939,7 +1016,17 @@ void quit()
 #ifdef PSP_BUILD
   sceKernelExitGame();
 #else
+
+#ifdef IPOD_BUILD
+  ipod_exit_conf();
+  // ipod_exit_sound() called by sound_exit()
+  ipod_exit_cop();
+  ipod_exit_input();
+  ipod_exit_hw();
+  ipod_exit_video(); // Exits to console mode
+#else
   SDL_Quit();
+#endif
 
 #ifdef GP2X_BUILD
   gp2x_quit();
@@ -954,7 +1041,9 @@ void reset_gba()
   init_main();
   init_memory();
   init_cpu();
+#ifndef NOSOUND
   reset_sound();
+#endif
 }
 
 #ifdef PSP_BUILD

@@ -198,6 +198,10 @@ extern u8 bit_count[256];
 
 #include "giz/arm_emit.h"
 
+#elif defined(IPOD_BUILD)
+
+#include "gp2x/arm_emit.h"
+
 #else
 
 #include "x86/x86_emit.h"

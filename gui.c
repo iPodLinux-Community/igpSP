@@ -38,6 +38,12 @@
 #define FILE_LIST_POSITION 5
 #define DIR_LIST_POSITION 260
 
+#elif defined(IPOD_BUILD)
+
+#define FILE_LIST_ROWS 12 // Max # of entries via experimentation
+#define FILE_LIST_POSITION 20 // Offset from left
+#define DIR_LIST_POSITION 120 // 240 / 2
+
 #else
 
 #define FILE_LIST_ROWS 25
@@ -58,7 +64,7 @@
 
 #endif
 
-#ifdef GP2X_BUILD
+#if defined(GP2X_BUILD) || defined(IPOD_BUILD)
 
 #define COLOR_BG            color16(0, 0, 0)
 
@@ -73,6 +79,8 @@
 #define COLOR_INACTIVE_ITEM color16(13, 40, 18)
 #define COLOR_FRAMESKIP_BAR color16(15, 31, 31)
 #define COLOR_HELP_TEXT     color16(16, 40, 24)
+
+extern u32 file_length(u8 *dummy, FILE *fp);
 
 int sort_function(const void *dest_str_ptr, const void *src_str_ptr)
 {
@@ -640,7 +648,7 @@ u32 gamepad_config_line_to_button[] =
 
 #endif
 
-#ifdef GP2X_BUILD
+#if defined(GP2X_BUILD) || defined(IPOD_BUILD)
 
 u32 gamepad_config_line_to_button[] =
  { 0, 2, 1, 3, 8, 9, 10, 11, 6, 7, 4, 5 };
@@ -738,12 +746,15 @@ s32 load_config_file()
 
       screen_scale = file_options[0] % 3;
       screen_filter = file_options[1] % 2;
+#ifndef NOSOUND
       global_enable_audio = file_options[2] % 2;
 
 #ifdef PSP_BUILD
       audio_buffer_size_number = file_options[3] % 10;
 #else
       audio_buffer_size_number = file_options[3] % 11;
+#endif
+
 #endif
 
       update_backup_flag = file_options[4] % 2;
@@ -838,8 +849,10 @@ s32 save_config_file()
 
     file_options[0] = screen_scale;
     file_options[1] = screen_filter;
+#ifndef NOSOUND
     file_options[2] = global_enable_audio;
     file_options[3] = audio_buffer_size_number;
+#endif
     file_options[4] = update_backup_flag;
     file_options[5] = global_enable_analog;
     file_options[6] = analog_sensitivity_level;
@@ -1008,7 +1021,11 @@ u32 menu(u16 *original_screen)
 
   void menu_load()
   {
+#ifdef IPOD_BUILD
+    u8 *file_ext[] = { ".gba", ".bin", NULL };
+#else
     u8 *file_ext[] = { ".gba", ".bin", ".zip", NULL };
+#endif
     u8 load_filename[512];
     save_game_config_file();
     if(load_file(file_ext, load_filename) != -1)
@@ -1191,6 +1208,25 @@ u32 menu(u16 *original_screen)
   };
 
   // Marker for help information, don't go past this mark (except \n)------*
+#ifdef IPOD_BUILD
+extern int ipod_volume;
+menu_option_type graphics_sound_options[] =
+  {
+    string_selection_option(NULL, "Frameskip type", frameskip_options,
+     (u32 *)(&current_frameskip_type), 3, "", 0),
+    numeric_selection_option(NULL, "Frameskip value", &frameskip_value,
+	 100, "", 1),
+    string_selection_option(NULL, "Framskip variation",
+     frameskip_variation_options, &random_skip, 2, "", 2)
+#ifndef NOSOUND
+	 ,
+    string_selection_option(NULL, "Audio output", yes_no_options,
+     &global_enable_audio, 2, "", 3),
+    numeric_selection_option(NULL, "Volume level",
+     (u32 *)(&ipod_volume), 150, "", 4)
+#endif
+  };
+#else
   menu_option_type graphics_sound_options[] =
   {
     string_selection_option(NULL, "Display scaling", scale_options,
@@ -1242,9 +1278,25 @@ u32 menu(u16 *original_screen)
      10),
     submenu_option(NULL, "Back", "Return to the main menu.", 12)
   };
+#endif
 
   make_menu(graphics_sound, submenu_graphics_sound, NULL);
 
+#ifdef IPOD_BUILD
+// Only displays up to 8 menu items for some reason
+  menu_option_type cheats_misc_options[] =
+  {
+    cheat_option(0),
+    cheat_option(1),
+    cheat_option(2),
+    cheat_option(3),
+    cheat_option(4),
+    cheat_option(5),
+    cheat_option(6),
+    cheat_option(7),
+    cheat_option(8)
+  };
+#else
   menu_option_type cheats_misc_options[] =
   {
     cheat_option(0),
@@ -1270,9 +1322,26 @@ u32 menu(u16 *original_screen)
      "Use the latter with extreme care.", 12),
     submenu_option(NULL, "Back", "Return to the main menu.", 14)
   };
+#endif
 
   make_menu(cheats_misc, submenu_cheats_misc, NULL);
 
+#ifdef IPOD_BUILD
+  menu_option_type savestate_options[] =
+  {
+    numeric_selection_action_hide_option(menu_load_state, menu_change_state,
+     "Load from current slot", &savestate_slot, 10, "", 0),
+    numeric_selection_action_hide_option(menu_save_state, menu_change_state,
+     "Save to current slot", &savestate_slot, 10, "", 1),
+    numeric_selection_action_hide_option(menu_load_state_file,
+      menu_change_state,
+     "Load from file", &savestate_slot, 10, "", 2),
+    numeric_selection_option(menu_change_state,
+     "Current savestate slot", &savestate_slot, 10, "", 3),
+	string_selection_option(NULL, "Update backup",
+     update_backup_options, &update_backup_flag, 2, "", 4)
+  };
+#else
   menu_option_type savestate_options[] =
   {
     numeric_selection_action_hide_option(menu_load_state, menu_change_state,
@@ -1293,6 +1362,7 @@ u32 menu(u16 *original_screen)
      "Change the current savestate slot.\n", 11),
     submenu_option(NULL, "Back", "Return to the main menu.", 13)
   };
+#endif
 
   make_menu(savestate, submenu_savestate, NULL);
 
@@ -1375,9 +1445,108 @@ u32 menu(u16 *original_screen)
 
 #endif
 
+#ifndef IPOD_BUILD
   make_menu(gamepad_config, submenu_gamepad, NULL);
   make_menu(analog_config, submenu_analog, NULL);
+#endif
 
+#ifdef IPOD_BUILD
+  #include "ipod/ipod_common.h"
+
+  extern int ipod_menu_scrolling;
+  extern int ipod_map_triggers;
+  extern int ipod_rapid_fire;
+
+  u8 *off_on_options[] = { "Off", "On" };
+  u8 *on_off_options[] = { "On", "Off" };
+
+  void submenu_ipod_input() {}
+
+  menu_option_type ipod_input_options[] =
+  {
+    string_selection_option(NULL, "Menu scrolling",
+     off_on_options, (u32 *)(&ipod_menu_scrolling), 2, "", 0),
+    string_selection_option(NULL, "Map L/R triggers",
+     off_on_options, (u32 *)(&ipod_map_triggers), 2, "", 1),
+    string_selection_option(NULL, "Rapid fire for A & B",
+     off_on_options, (u32 *)(&ipod_rapid_fire), 2, "", 2)
+  };
+
+  make_menu(ipod_input, submenu_ipod_input, NULL);
+
+
+  extern int ipod_cpu_speed;
+  //extern int ipod_contrast; // No support for monochrome iPods - see ipod_video.c
+  extern int ipod_brightness;
+  extern int ipod_backlight;
+
+  u8 *cpu_speed_options[] = { "66MHz", "75MHz", "78MHz", "81MHz [Unstable]" };
+
+  void submenu_ipod_hardware() {}
+
+  menu_option_type ipod_hardware_options[] =
+  {
+    string_selection_option(NULL, "CPU speed",
+     cpu_speed_options, (u32 *)(&ipod_cpu_speed), 4, "", 0),
+    //numeric_selection_option(NULL, "Contrast",
+     //(u32 *)(&ipod_contrast), 120, "", 1),
+    numeric_selection_option(NULL, "Brightness",
+     (u32 *)(&ipod_brightness), 32, "", 1),
+    string_selection_option(NULL, "Backlight",
+     off_on_options, (u32 *)(&ipod_backlight), 2, "", 2)
+  };
+
+  make_menu(ipod_hardware, submenu_ipod_hardware, NULL);
+
+
+  extern int ipod_scale_type;
+  extern int ipod_smooth_type;
+  extern u32 no_alpha;
+  extern u32 synchronize_flag;
+
+  u8 *scale_type_options[] = { "Unscaled", "Full-screen", "Scale to height", "Scale to width" };
+  u8 *smooth_type_options[] = { "Normal", "Type 1", "Type 2" };
+
+  void submenu_ipod_tweaks() {}
+
+  menu_option_type ipod_tweaks_options[] =
+  {
+    string_selection_option(NULL, "Scale type",
+     scale_type_options, (u32 *)(&ipod_scale_type), 4, "", 0),
+    string_selection_option(NULL, "Smooth type",
+     smooth_type_options, (u32 *)(&ipod_smooth_type), 3, "", 1),
+    string_selection_option(NULL, "Alpha blending",
+     on_off_options, &no_alpha, 2, "", 2),
+    string_selection_option(NULL, "Synchronize",
+     off_on_options, &synchronize_flag, 2, "", 3),
+    submenu_option(&ipod_input_menu, "Input settings", "", 4),
+    submenu_option(&ipod_hardware_menu, "Hardware settings", "", 5)
+  };
+
+  make_menu(ipod_tweaks, submenu_ipod_tweaks, NULL);
+
+#endif
+
+#ifdef IPOD_BUILD
+  menu_option_type main_options[] =
+  {
+    submenu_option(&ipod_tweaks_menu, "iPod Tweaks and Options", "", 0),
+    numeric_selection_action_option(menu_load_state, NULL,
+     "Load state from slot", &savestate_slot, 10, "", 1),
+    numeric_selection_action_option(menu_save_state, NULL,
+     "Save state to slot", &savestate_slot, 10, "", 2),
+    submenu_option(&savestate_menu, "Savestate Options", "", 3),
+#ifndef NOSOUND
+    submenu_option(&graphics_sound_menu, "Frameskip and Sound", "", 4),
+#else
+    submenu_option(&graphics_sound_menu, "Frameskip Options", "", 4),
+#endif
+    submenu_option(&cheats_misc_menu, "Enable Cheats", "", 5),
+    action_option(menu_load, NULL, "Load new game", "", 6),
+    action_option(menu_restart, NULL, "Restart game", "", 7),
+    action_option(menu_quit, NULL, "Exit igpSP K7", "", 8)
+  };
+#else
   menu_option_type main_options[] =
   {
     submenu_option(&graphics_sound_menu, "Graphics and Sound options",
@@ -1415,13 +1584,16 @@ u32 menu(u16 *original_screen)
     action_option(menu_quit, NULL, "Exit gpSP",
      "Select to exit gpSP and return to the PSP XMB/loader.", 15)
   };
+#endif
 
   make_menu(main, submenu_main, NULL);
 
   void choose_menu(menu_type *new_menu)
   {
+#ifndef IPOD_BUILD
     if(new_menu == NULL)
       new_menu = &main_menu;
+#endif
 
     clear_screen(COLOR_BG);
 
@@ -1446,6 +1618,7 @@ u32 menu(u16 *original_screen)
 
   video_resolution_large();
 
+#ifndef IPOD_BUILD
 #ifndef GP2X_BUILD
   SDL_LockMutex(sound_mutex);
 #endif
@@ -1453,6 +1626,7 @@ u32 menu(u16 *original_screen)
 
 #ifndef GP2X_BUILD
   SDL_UnlockMutex(sound_mutex);
+#endif
 #endif
 
   if(gamepak_filename[0] == 0)
@@ -1599,7 +1773,9 @@ u32 menu(u16 *original_screen)
     scePowerSetClockFrequency(clock_speed, clock_speed, clock_speed / 2);
   #endif
 
+#ifndef IPOD_BUILD
   SDL_PauseAudio(0);
+#endif
 
   return return_value;
 }
